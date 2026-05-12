@@ -1,7 +1,0 @@
-mcp>=0.1.0
-google-cloud-analytics-admin
-google-cloud-analytics-data
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
