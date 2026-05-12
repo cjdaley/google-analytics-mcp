@@ -1,12 +1,10 @@
 [build]
-dockerfile = "Dockerfile"
+builder = "nixpacks"
 
 [deploy]
-startCommand = "python -m ads_mcp.server"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
+startCommand = "python -m analytics_mcp"
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 5
 
 [env]
-PORT = "8000"
-FASTMCP_HOST = "0.0.0.0"
-FASTMCP_PORT = "8000"
+PYTHONUNBUFFERED = "1"
