@@ -12,8 +12,7 @@ import sys
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request
 import uvicorn
 
 # Configure logging
@@ -22,14 +21,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-class MCPRequest(BaseModel):
-    """MCP JSON-RPC request model."""
-    jsonrpc: str = "2.0"
-    id: Any
-    method: str
-    params: Dict[str, Any] | None = None
 
 
 class BridgeServer:
@@ -77,6 +68,7 @@ class BridgeServer:
         try:
             # Send request as JSON to stdin
             request_json = json.dumps(request) + "\n"
+            logger.debug("Sending to MCP server: %s", request_json)
             self.process.stdin.write(request_json)
             self.process.stdin.flush()
 
@@ -85,6 +77,7 @@ class BridgeServer:
             if not response_line:
                 raise RuntimeError("No response from MCP server")
 
+            logger.debug("Received from MCP server: %s", response_line)
             response = json.loads(response_line)
             return response
 
@@ -132,18 +125,22 @@ async def health_check():
 
 
 @app.post("/mcp")
-async def mcp_request(request: MCPRequest):
+async def mcp_request(request: Request):
     """
     Forward MCP requests to the stdio server.
-
-    This endpoint accepts MCP JSON-RPC requests and forwards them
-    to the analytics-mcp stdio server, returning the response.
+    Accepts raw JSON body instead of strict Pydantic model.
     """
     try:
-        logger.debug("Received MCP request: %s", request.method)
-
-        # Convert Pydantic model to dict
-        request_dict = request.model_dump(exclude_none=True)
+        # Read raw body
+        body = await request.body()
+        logger.debug("Received raw request body: %s", body)
+        
+        if not body:
+            raise HTTPException(status_code=400, detail="Empty request body")
+        
+        # Parse JSON
+        request_dict = json.loads(body)
+        logger.debug("Parsed MCP request: %s", request_dict)
 
         # Forward to MCP server
         response = bridge.send_request(request_dict)
@@ -151,12 +148,12 @@ async def mcp_request(request: MCPRequest):
         logger.debug("MCP response: %s", response)
         return response
 
+    except json.JSONDecodeError as e:
+        logger.error("JSON decode error: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid JSON in request body")
     except RuntimeError as e:
         logger.error("Server error: %s", e)
         raise HTTPException(status_code=503, detail=str(e))
-    except json.JSONDecodeError as e:
-        logger.error("JSON decode error: %s", e)
-        raise HTTPException(status_code=400, detail="Invalid JSON response from MCP server")
     except Exception as e:
         logger.error("Unexpected error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -170,7 +167,7 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "health": "/health",
-            "mcp": "/mcp",
+            "mcp": "/mcp (POST only)",
         },
         "documentation": "/docs",
     }
