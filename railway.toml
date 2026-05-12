@@ -1,9 +1,9 @@
 [build]
 builder = "nixpacks"
-buildCommand = "pip install -e ."
+buildCommand = "pip install -e . && pip install mcp"
 
 [deploy]
-startCommand = "python -m analytics_mcp.server --transport streamable-http"
+startCommand = "python -m mcp.server.stdio python -m analytics_mcp.server"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
