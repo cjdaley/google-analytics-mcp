@@ -1,9 +1,9 @@
 [build]
-builder = "nixpacks"
+builder = "RAILPACK"
 buildCommand = "pip install -e ."
 
 [deploy]
-startCommand = "python main.py --transport streamable-http"
+startCommand = "python -m analytics_mcp.server"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
