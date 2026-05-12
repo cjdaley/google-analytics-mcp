@@ -1,9 +1,7 @@
 [build]
-builder = "RAILPACK"
-buildCommand = "pip install mcp>=1.24.0 google-analytics-data==0.22.0 google-analytics-admin==0.29.0 google-auth google-adk httpx && pip install -e ."
+dockerfile = "Dockerfile"
 
 [deploy]
-startCommand = "python -m analytics_mcp.server"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
