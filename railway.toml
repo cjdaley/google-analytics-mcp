@@ -1,9 +1,9 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "pip install -e . && pip install pyright"
+buildCommand = "pip install -e . --no-cache-dir"
 
 [deploy]
-startCommand = "sh -c 'python -m analytics_mcp.server'"
+startCommand = "python -m analytics_mcp.server"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
