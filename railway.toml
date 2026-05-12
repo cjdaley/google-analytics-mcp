@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "pip install --upgrade pip setuptools wheel && pip install -e ."
+buildCommand = "pip install mcp>=1.24.0 google-analytics-data==0.22.0 google-analytics-admin==0.29.0 google-auth google-adk httpx && pip install -e ."
 
 [deploy]
 startCommand = "python -m analytics_mcp.server"
