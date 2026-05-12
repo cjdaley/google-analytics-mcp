@@ -1,6 +1,6 @@
 [build]
-builder = "RAILPACK"
-buildCommand = "pip install -e . --no-cache-dir"
+builder = "nixpacks"
+buildCommand = "pip install -e ."
 
 [deploy]
 startCommand = "python -m analytics_mcp.server"
