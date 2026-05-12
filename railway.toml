@@ -2,7 +2,7 @@
 builder = "RAILPACK"
 
 [deploy]
-startCommand = "python -m analytics_mcp"
+startCommand = "analytics-mcp"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
