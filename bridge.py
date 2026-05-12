@@ -9,8 +9,11 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 from contextlib import asynccontextmanager
 from typing import Any, Dict
+from queue import Queue, Empty
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 import uvicorn
@@ -21,6 +24,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Timeout for MCP server responses (seconds)
+MCP_RESPONSE_TIMEOUT = 10
 
 
 class BridgeServer:
@@ -60,27 +66,51 @@ class BridgeServer:
             except Exception as e:
                 logger.error("Error stopping server: %s", e)
 
+    def is_server_running(self) -> bool:
+        """Check if server process is still running."""
+        return self.process is not None and self.process.poll() is None
+
     def send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Send a request to the MCP server and get response."""
-        if not self.process or self.process.poll() is not None:
+        if not self.is_server_running():
             raise RuntimeError("Analytics MCP server is not running")
 
         try:
-            # Send request as JSON to stdin
+            # Send request as JSON to stdin with timeout
             request_json = json.dumps(request) + "\n"
             logger.debug("Sending to MCP server: %s", request_json)
-            self.process.stdin.write(request_json)
-            self.process.stdin.flush()
+            
+            try:
+                self.process.stdin.write(request_json)
+                self.process.stdin.flush()
+            except BrokenPipeError:
+                raise RuntimeError("MCP server process disconnected")
 
-            # Read response from stdout
-            response_line = self.process.stdout.readline()
+            # Read response from stdout with timeout
+            start_time = time.time()
+            response_line = ""
+            
+            while time.time() - start_time < MCP_RESPONSE_TIMEOUT:
+                try:
+                    # Non-blocking read with small timeout
+                    response_line = self.process.stdout.readline()
+                    if response_line:
+                        break
+                    time.sleep(0.01)  # Small delay to prevent busy waiting
+                except Exception as e:
+                    logger.error("Error reading from stdout: %s", e)
+                    raise RuntimeError("Failed to read MCP server response")
+
             if not response_line:
-                raise RuntimeError("No response from MCP server")
+                raise RuntimeError(f"No response from MCP server after {MCP_RESPONSE_TIMEOUT}s")
 
             logger.debug("Received from MCP server: %s", response_line)
             response = json.loads(response_line)
             return response
 
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON from MCP server: %s", e)
+            raise RuntimeError("MCP server returned invalid JSON")
         except Exception as e:
             logger.error("Error communicating with MCP server: %s", e)
             raise
@@ -119,7 +149,10 @@ app = FastAPI(
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    if bridge.process and bridge.process.poll() is None:
+    running = bridge.is_server_running()
+    logger.debug("Health check: process running = %s", running)
+    
+    if running:
         return {"status": "healthy", "mcp_server": "running"}
     return {"status": "unhealthy", "mcp_server": "not_running"}
 
@@ -128,23 +161,22 @@ async def health_check():
 async def mcp_request(request: Request):
     """
     Forward MCP requests to the stdio server.
-    Accepts raw JSON body instead of strict Pydantic model.
+    Accepts raw JSON body.
     """
     try:
         # Read raw body
         body = await request.body()
-        logger.debug("Received raw request body: %s", body)
+        logger.debug("Received request body: %s", body.decode() if body else "empty")
         
         if not body:
             raise HTTPException(status_code=400, detail="Empty request body")
         
         # Parse JSON
         request_dict = json.loads(body)
-        logger.debug("Parsed MCP request: %s", request_dict)
+        logger.info("Processing MCP request: %s", request_dict.get("method", "unknown"))
 
         # Forward to MCP server
         response = bridge.send_request(request_dict)
-
         logger.debug("MCP response: %s", response)
         return response
 
@@ -161,15 +193,11 @@ async def mcp_request(request: Request):
 
 @app.get("/")
 async def root():
-    """Root endpoint with API information."""
+    """Root endpoint."""
     return {
         "name": "Google Analytics MCP HTTP Bridge",
         "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "mcp": "/mcp (POST only)",
-        },
-        "documentation": "/docs",
+        "status": "running" if bridge.is_server_running() else "stopped",
     }
 
 
