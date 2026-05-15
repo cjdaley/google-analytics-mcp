@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import threading
+import tempfile
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 from queue import Queue, Empty
@@ -40,6 +41,28 @@ class BridgeServer:
         """Start the analytics-mcp stdio server."""
         try:
             logger.info("Starting analytics-mcp server...")
+            
+            # Set up environment for subprocess
+            env = os.environ.copy()
+            
+            # If credentials are provided as JSON in env var, write them to a temp file
+            if "GOOGLE_SERVICE_ACCOUNT_JSON" in env:
+                try:
+                    creds_json = json.loads(env["GOOGLE_SERVICE_ACCOUNT_JSON"])
+                    # Write to temp file
+                    creds_file = tempfile.NamedTemporaryFile(
+                        mode='w', 
+                        suffix='.json', 
+                        delete=False,
+                        dir='/tmp'
+                    )
+                    json.dump(creds_json, creds_file)
+                    creds_file.close()
+                    env["GOOGLE_APPLICATION_CREDENTIALS"] = creds_file.name
+                    logger.info("Credentials file created at: %s", creds_file.name)
+                except json.JSONDecodeError as e:
+                    logger.error("Invalid JSON in GOOGLE_SERVICE_ACCOUNT_JSON: %s", e)
+            
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "analytics_mcp.server"],
                 stdin=subprocess.PIPE,
@@ -47,6 +70,7 @@ class BridgeServer:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=env,  # Pass the modified environment
             )
             logger.info("Analytics MCP server started (PID: %d)", self.process.pid)
         except Exception as e:
